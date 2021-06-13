@@ -211,7 +211,7 @@ if __name__ == '__main__':
                         )
                     )
                 )
-            elif p == DpPolicyType.DP_POLICY_RR_NN:
+            elif p == DpPolicyType.DP_POLICY_RR_N:
                 config_list.extend(
                     list(
                         product(
