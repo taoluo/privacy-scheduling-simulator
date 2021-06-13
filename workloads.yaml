@@ -1,0 +1,72 @@
+#        'task.arrival_interval': 10,
+#        'task.demand.num_blocks.mu': 20,
+#        'task.demand.num_blocks.sigma': 10,
+#        # num_blocks * 1/mean_tasks_per_block = 1/10
+#        'task.demand.epsilon.mean_tasks_per_block': 15,
+#
+#        'task.completion_time.constant': 1,
+#        # max = half of capacity
+#        'task.completion_time.max': 100,
+#        # 'task.completion_time.min': 10,
+#        'task.demand.num_cpu.constant': 1,  # [min, max]
+#        'task.demand.num_cpu.max': 80,
+#        'task.demand.num_cpu.min': 1,
+#
+#        'task.demand.size_memory.max': 412,
+#        'task.demand.size_memory.min': 1,
+#
+#        'task.demand.num_gpu.max': 3,
+#        'task.demand.num_gpu.min': 1,
+# block num 5
+# bad for FCFS
+- arrival_time: 0.1
+  start_block_index: 0
+  end_block_index: 0
+  epsilon: 9.0
+  completion_time: 1.0
+  cpu_demand: 1
+  gpu_demand: 1
+  memory_demand: 1
+- arrival_time: 2
+  start_block_index: 1
+  end_block_index: 1
+  epsilon: 8.0
+  completion_time: 1.0
+  cpu_demand: 1
+  gpu_demand: 1
+  memory_demand: 1
+# bad for rate limit
+- arrival_time: 6
+  start_block_index: 0
+  end_block_index: 2
+  epsilon: 2.1
+  completion_time: 1.0
+  cpu_demand: 1
+  gpu_demand: 1
+  memory_demand: 1
+- arrival_time: 8
+  start_block_index: 0
+  end_block_index: 2
+  epsilon: 1.1
+  completion_time:fixme 1.0
+  cpu_demand: 1
+  gpu_demand: 1
+  memory_demand: 1
+
+# bad for dpft
+#- arrival_time: 8.1
+#  start_block_index: 0
+#  end_block_index: 2
+#  epsilon: 2.1
+#  completion_time: 1.0
+#  cpu_demand: 1
+#  gpu_demand: 1
+#  memory_demand: 1
+#- arrival_time: 9.1
+#  start_block_index: 0
+#  end_block_index: 2
+#  epsilon: 1.1
+#  completion_time: 1.0
+#  cpu_demand: 1
+#  gpu_demand: 1
+#  memory_demand: 1
