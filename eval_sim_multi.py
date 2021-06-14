@@ -1,7 +1,7 @@
 from DP_simulator import Top
-import shutil
+# import shutil
 import os
-import copy
+# import copy
 from utils.configs import *
 import sys
 from datetime import datetime
@@ -136,8 +136,8 @@ if __name__ == '__main__':
     aligned_N = None  # [int(10 * 3.1 ** x) for x in range(8)]
     dp_arrival_itvl_light = 0.078125
     dp_arrival_itvl_heavy = 0.004264781
-    dp_subconfig.dp_arrival_itvl = 0.078125  # dp contention point
-    dp_subconfig.dp_arrival_itvl = dp_arrival_itvl_heavy  # rdp contention point
+    dp_subconfig.dp_arrival_itvl = dp_arrival_itvl_light  # dp contention point
+    # dp_subconfig.dp_arrival_itvl = dp_arrival_itvl_heavy  # rdp contention point
     N_scale_factor = [0.10, 0.50, 0.75, 1.00, 1.25, 1.75, 2.1]  # for rdp and dp
     N_scale_factor_ext = [2.75, 3.25, 3.75, 7.5, 11.25, 15, 30, 60, 100]  # for dp only
     # num_arrivals_multiplier = 2.0 # for sim_duration actual arrived tasks / max allocable tasks
