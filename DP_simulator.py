@@ -9,9 +9,8 @@ import heapq as hq
 # from argparse import ArgumentParser
 from datetime import timedelta
 from functools import partial
-from itertools import count, tee, chain, product
+from itertools import count, tee
 import simpy
-import sys
 import timeit
 
 # from numba import jit
@@ -33,7 +32,7 @@ if WITH_PROFILE:
 
 from utils.misc import max_min_fair_allocation, defuse
 from utils.configs import *
-from store import (
+from utils.store import (
     LazyAnyFilterQueue,
     DummyPutPool,
     DummyPool,
@@ -53,9 +52,7 @@ import random
 from pyDigitalWaveTools.vcd.parser import VcdParser
 import yaml
 from desmod.component import Component
-from desmod.config import apply_user_overrides
 from desmod.dot import generate_dot
-from desmod.simulation import simulate, simulate_factors, simulate_many
 import pprint as pp
 import copy
 
