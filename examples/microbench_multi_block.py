@@ -159,10 +159,7 @@ if __name__ == '__main__':
         N * dp_subconfig.dp_arrival_itvl for N in DP_N
     ]
     dp_subconfig.sim_duration = '%d s' % (
-
-
-        config['resource_master.block.arrival_interval'] * 30 # * 0.01 # fixme
-
+        config['resource_master.block.arrival_interval'] * 30
     )
     # dp_subconfig.sim_duration = '%d s' % (dp_subconfig.dp_arrival_itvl * dp_max_amount * num_arrivals_multiplier)
     # dp_subconfig.sim_duration = '11 s'

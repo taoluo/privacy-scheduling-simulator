@@ -1,12 +1,11 @@
 import math
 
-# tag
 def gaussian_dp2sigma(epsilon, sensitivity, delta):
     return (sensitivity/epsilon) * math.sqrt(2 * math.log(1.25/delta))
-## tag
+
 def compute_rdp_epsilons_gaussian(sigma, alphas):
     return [alpha / (2 * (sigma ** 2) ) for alpha in alphas]
-## tag
+
 def compute_rdp_epsilons_laplace(laplace_noise, orders):
     """
     RDP curve for a Laplace mechanism with sensitivity 1.
