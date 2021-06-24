@@ -19,7 +19,7 @@ eval "$($HOME/miniconda/bin/conda shell.bash hook)"
 
 conda init
 
-conda create -n ae  -c conda-forge pypy=7.3.3 -y
+conda create -n ae  -c conda-forge pypy3.6 -y
 conda activate ae
 cd /mnt/data
 git clone git://github.com/taoluo/PrivacySchedSim.git

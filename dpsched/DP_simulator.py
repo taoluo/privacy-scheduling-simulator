@@ -16,7 +16,7 @@ import timeit
 # from numba import jit
 
 import math
-from utils.rdp import (
+from .utils.rdp import (
     compute_rdp_epsilons_laplace,
     compute_rdp_epsilons_gaussian,
     gaussian_dp2sigma,
@@ -30,9 +30,9 @@ if WITH_PROFILE:
     profile = line_profiler.LineProfiler()
     atexit.register(profile.print_stats)
 
-from utils.misc import max_min_fair_allocation, defuse
-from utils.configs import *
-from utils.store import (
+from .utils.misc import max_min_fair_allocation, defuse
+from .utils.configs import *
+from .utils.store import (
     LazyAnyFilterQueue,
     DummyPutPool,
     DummyPool,
@@ -40,7 +40,7 @@ from utils.store import (
     DummyPutLazyAnyFilterQueue,
     DummyFilterQueue,
 )
-from utils.exceptions import *
+from .utils.exceptions import *
 import shutil
 import os
 
@@ -70,22 +70,23 @@ class Top(Component):
         self.resource_master = ResourceMaster(self)
 
         # tick_seconds = self.env.config['resource_master.clock.tick_seconds']
-        if self.env.config['resource_master.clock.dpf_adaptive_tick']:
+        if self.env.config['sim.clock.adaptive_tick']:
             tick_seconds = (
                     self.env.config['task.arrival_interval'] * 0.5
             )  # median: avg arrival time x0.68
             self.env.config['resource_master.clock.tick_seconds'] = tick_seconds
-        # tick_seconds = 0.5
+        tick_seconds = 0.1
         self.global_clock = Clock(tick_seconds, self)
         self.add_process(self._timeout_stop)
 
     def _save_config(self):
         # print(os.getcwd())
-        # with open(os.path.join('./', os.path.basename(self.env.config['sim.main_file']) ), 'w') as f:
-        shutil.copy(self.env.config['sim.main_file'],  os.path.basename(self.env.config['sim.main_file']) )
-        # print(self.env.config['sim.main_file'], "xxxx")
-        # shutil.copy(self.env.config['sim.main_file'],  "xxxx")
-        #              os.path.basename(self.env.config['sim.main_file'] + "xxxx"))
+        # with open(os.path.join('./ , os.path.basename(self.env.config['sim.main_file']) ), 'w') as f:
+        if self.env.config.get('sim.main_file'):
+            shutil.copy(self.env.config['sim.main_file'],  os.path.basename(self.env.config['sim.main_file']) )
+            # print(self.env.config['sim.main_file'], "xxxx")
+            # shutil.copy(self.env.config['sim.main_file'],  "xxxx")
+            #              os.path.basename(self.env.config['sim.main_file'] + "xxxx"))
         if self.env.config['workload_test.enabled']:
             shutil.copy(self.env.config['workload_test.workload_trace_file'], os.path.join('./', os.path.basename(self.env.config['workload_test.workload_trace_file']) ))
 
@@ -2586,61 +2587,38 @@ class Tasks(Component):
         else:
             self.db = None
 
-        # todo use setdefault()
-        num_cpu_min = (
-            1
-            if "task.demand.num_cpu.min" not in self.env.config
-            else self.env.config['task.demand.num_cpu.min']
-        )
         if self.env.config.get('task.demand.num_cpu.constant') is not None:
             # self.debug("task cpu demand is fix %d " % self.env.config['task.demand.num_cpu.constant'])
             assert isinstance(self.env.config['task.demand.num_cpu.constant'], int)
             self.cpu_dist = lambda: self.env.config['task.demand.num_cpu.constant']
         else:
+            num_cpu_min = self.env.config.setdefault('task.demand.num_cpu.min',1)
+            num_cpu_max = self.env.config.setdefault('task.demand.num_cpu.max', num_cpu_min)
             self.cpu_dist = partial(
                 self.load_rand.randint,
                 num_cpu_min,
-                self.env.config['task.demand.num_cpu.max'],
+                num_cpu_max,
             )
 
-        size_memory_min = (
-            1
-            if "task.demand.size_memory.min" not in self.env.config
-            else self.env.config['task.demand.size_memory.min']
-        )
-        self.memory_dist = partial(
-            self.load_rand.randint,
-            size_memory_min,
-            self.env.config['task.demand.size_memory.max'],
-        )
+        size_memory_min = self.env.config.setdefault('task.demand.size_memory.min',1)
+        size_memory_max = self.env.config.setdefault('task.demand.size_memory.max', size_memory_min)
+        self.memory_dist = partial( self.load_rand.randint, size_memory_min, size_memory_max )
 
-        num_gpu_min = (
-            1
-            if "task.demand.num_gpu.min" not in self.env.config
-            else self.env.config['task.demand.num_gpu.min']
-        )
-        self.gpu_dist = partial(
-            self.load_rand.randint,
-            num_gpu_min,
-            self.env.config['task.demand.num_gpu.max'],
-        )
+        num_gpu_min = self.env.config.setdefault('task.demand.num_gpu.min',1)
+        num_gpu_max = self.env.config.setdefault('task.demand.num_gpu.max', 1)
+        self.gpu_dist = partial( self.load_rand.randint, num_gpu_min, num_gpu_max )
 
-        completion_time_min = (
-            1
-            if "task.completion_time.min" not in self.env.config
-            else self.env.config['task.completion_time.min']
-        )
-        if self.env.config.get('task.completion_time.constant') is not None:
-            # self.debug("task completion time is fixed %d" % self.env.config['task.completion_time.constant'])
+
+        if self.env.config.get('task.demand.completion_time.constant') is not None:
+            # self.debug("task completion time is fixed %d" % self.env.config['task.demand.completion_time.constant'])
             self.completion_time_dist = lambda: self.env.config[
-                'task.completion_time.constant'
+                'task.demand.completion_time.constant'
             ]
         else:
+            completion_time_min = self.env.config.setdefault('task.demand.completion_time.min', 0)
+            completion_time_max = self.env.config.setdefault('task.demand.completion_time.max', completion_time_min)
             self.completion_time_dist = partial(
-                self.load_rand.randint,
-                completion_time_min,
-                self.env.config['task.completion_time.max'],
-            )
+                self.load_rand.randint, completion_time_min, completion_time_max,)
         choose_one = lambda *kargs, **kwargs: self.load_rand.choices(*kargs, **kwargs)[
             0
         ]
@@ -2758,7 +2736,7 @@ class Tasks(Component):
                                 1 / epsilon, orders=ALPHAS
                             )  # lambda = 1/epsilon
                         else:
-                            sigma = gaussian_dp2sigma(epsilon, 1, delta)
+                            sigma = gaussian_dp2sigma(epsilon, 1, DELTA)
                             rdp_demand = compute_rdp_epsilons_gaussian(sigma, ALPHAS)
                 else:
                     rdp_demand = None

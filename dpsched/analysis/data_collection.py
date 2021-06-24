@@ -9,9 +9,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sqlite3
 import math
-from utils.configs import *
+from ..utils.configs import DpPolicyType
+
 # sns.set_palette("viridis")
 viridis = sns.color_palette("viridis")
+
+
 # sns.palplot(custom_palette)
 
 
@@ -32,12 +35,10 @@ def parse_json(d):
 
     res['granted_tasks_total'] = d["succeed_tasks_total"]
 
-    res['num_granted_tasks_l_dp_l_blk'] = d["succeed_tasks_l_dp_l_blk"] # large dp large block # 
-    res['num_granted_tasks_l_dp_s_blk'] = d["succeed_tasks_l_dp_s_blk"] # large dp small block # 
+    res['num_granted_tasks_l_dp_l_blk'] = d["succeed_tasks_l_dp_l_blk"]  # large dp large block #
+    res['num_granted_tasks_l_dp_s_blk'] = d["succeed_tasks_l_dp_s_blk"]  # large dp small block #
     res['num_granted_tasks_s_dp_l_blk'] = d["succeed_tasks_s_dp_l_blk"]
     res['num_granted_tasks_s_dp_s_blk'] = d["succeed_tasks_s_dp_s_blk"]
-
-
 
     res['granted_tasks_per_10sec'] = d["succeed_tasks_total"] * 10 / d["sim.time"]
     res['sim_duration'] = d["sim.time"]
@@ -52,7 +53,7 @@ def parse_json(d):
 
 
 def workspace2dataframe(workspace_dir):
-    data_files = list(os.walk( workspace_dir))
+    data_files = list(os.walk(workspace_dir))
     # raise(Exception(d))
     table_data = []
     # count = 0
@@ -68,7 +69,7 @@ def workspace2dataframe(workspace_dir):
     json_file = "result.json"
     sqlite_file = "sim.sqlite"
     for d in data_files:
-        if not d[1]: # subdirectory
+        if not d[1]:  # subdirectory
             result_json = None
             for file in d[2]:
                 if file.endswith('json'):
@@ -79,7 +80,7 @@ def workspace2dataframe(workspace_dir):
             #     # not found json
             #     print(d)
             #     continue
-                # raise (Exception(d))
+            # raise (Exception(d))
 
             with open(os.path.join(d[0], json_file)) as f:
                 data = json.load(f)
@@ -90,7 +91,12 @@ def workspace2dataframe(workspace_dir):
                             # "select (abs(dp_commit_timestamp) - start_timestamp) AS dp_allocation_duration  from tasks").fetchall()
                             "select start_timestamp,dp_commit_timestamp from tasks"
                         ).fetchall()
-                        parsed_d['dp_allocation_duration'] = alloc_dur
+                        parsed_d['dp_allocation_duration_list'] = alloc_dur
+                        err_alloc_dur = conn.execute(
+                            "select start_timestamp,dp_commit_timestamp from tasks where abs(dp_commit_timestamp) < start_timestamp"
+                        ).fetchall()
+                        if not len(err_alloc_dur) == 0:
+                            raise Exception(err_alloc_dur)
 
                 except Exception as e:
                     print(e)
@@ -109,31 +115,35 @@ def workspace2dataframe(workspace_dir):
     # table = table[table.epsilon_mice_fraction == 100]
     # table.replace({'policy': {'DPF_N_234': 'DPF-N', 'fcfs2342': 'FCFS', 'DPF_T_234': 'DPF-T', 'RR_NN': 'RR-N','RR_T':'RR-T'}},
     #               inplace=True)
-    if len(table.columns) ==0 :
+    if len(table.columns) == 0:
         raise Exception("no data found")
     table['N_or_T_based'] = None
-    is_n_based = lambda x: x in (DpPolicyType.DP_POLICY_DPF_N.value, DpPolicyType.DP_POLICY_RR_N.value,DpPolicyType.DP_POLICY_RR_N2.value)
-    is_t_based = lambda x: x in (DpPolicyType.DP_POLICY_DPF_T.value, DpPolicyType.DP_POLICY_RR_T.value,DpPolicyType.DP_POLICY_DPF_NA.value)
-    table.loc[table['policy'].apply(is_n_based),"N_or_T_based"] = 'N'
-    table.loc[table['policy'].apply(is_t_based),"N_or_T_based"] = 'T'
+    is_n_based = lambda x: x in (
+        DpPolicyType.DP_POLICY_DPF_N.value, DpPolicyType.DP_POLICY_RR_N.value, DpPolicyType.DP_POLICY_RR_N2.value)
+    is_t_based = lambda x: x in (
+        DpPolicyType.DP_POLICY_DPF_T.value, DpPolicyType.DP_POLICY_RR_T.value, DpPolicyType.DP_POLICY_DPF_NA.value)
+    table.loc[table['policy'].apply(is_n_based), "N_or_T_based"] = 'N'
+    table.loc[table['policy'].apply(is_t_based), "N_or_T_based"] = 'T'
     # table.loc[table['policy']=='FCFS',"N_or_T_based"] = 'T'
     #
     # tt = table[table['policy'] == 'FCFS'].copy()
     # tt['N_or_T_based'] = 'N'
     # table = table.append(tt, ignore_index=True)
-    table["N_"] = table.apply(get_n,axis=1)
+    table["N_"] = table.apply(get_n, axis=1)
     table["N_or_T_"] = table["N_"]
     table["N_or_T_"].loc[table['N_or_T_based'] == 'T'] = table["lifetime"]
 
     return table
 
+
 def get_n(row):
     if row['N_or_T_based'] == 'N':
         return row['task_amount_N']
     elif row['N_or_T_based'] == 'T':
-        return round(row['lifetime']/row['arrival_interval'])
+        return round(row['lifetime'] / row['arrival_interval'])
     else:
-        return -1 # for fcfs
+        return -1  # for fcfs
+
 
 def load_filter_by_dimension(df, dimension):
     load_dim = ['blocks_mice_fraction', 'epsilon_mice_fraction', 'arrival_interval']
@@ -176,6 +186,8 @@ def plot_by_contention_dim(table, dimension, delay_metrics='grant_delay_avg'):
     #     ax.set_zscale('log')
     ax.legend()
     plt.show()
+
+
 if __name__ == '__main__':
     a = workspace2dataframe("../results/workspace_06-12-17H-53-31")
     print('hello world')

@@ -90,7 +90,7 @@ class ResourceHandlerMessageType(str, Enum):
 # alpha subsamples for budget curve of Renyi DP
 ALPHAS = [1.000001, 1.0001, 1.5, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 20480]
 TIMEOUT_VAL = "timeout_triggered"
-DELTA = 1.0e-9
+DELTA = 1.0e-9 # delta budget in epsilon-delta DP
 
 # @dataclass
 # class TaskConfig:

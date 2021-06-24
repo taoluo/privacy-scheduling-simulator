@@ -1,27 +1,28 @@
-from DP_simulator import Top
-# import shutil
-import os
-# import copy
-from utils.configs import *
-import sys
-from datetime import datetime
-from itertools import product
+from dpsched import Top
+
 from desmod.simulation import simulate_factors
-
-
-
+import shutil
+import os
+import copy
+import sys
+from itertools import product
+from dpsched.utils.configs import *
+from datetime import datetime
 if __name__ == '__main__':
     # workload with contention
+    dp_arrival_itvl = 0.078125
+    rdp_arrival_itvl = 0.004264781
 
-    # rdp_arrival_itvl = 0.004264781
+    N_dp = 100
+    T_dp = rdp_arrival_itvl * N_dp
 
-    # N_dp = 100
-    # T_dp = rdp_arrival_itvl * N_dp
-    #
-    # N_rdp = 15000 # 14514
-    # T_rdp = rdp_arrival_itvl * N_rdp
-    eval_dp = True
-    eval_rdp = True
+    N_rdp = 15000  # 14514
+    T_rdp = rdp_arrival_itvl * N_rdp
+
+    run_dp = True
+    run_rdp = True
+    workspace_dir = 'exp_results/workspace_%s' % datetime.now().strftime("%m-%d-%HH-%M-%S")
+    print(f"experiment results are saved in  {workspace_dir}")
     config = {
         'sim.main_file': os.path.abspath(__file__),
         'sim.numerical_delta': 1e-8,
@@ -49,7 +50,7 @@ if __name__ == '__main__':
         'task.demand.num_gpu.min': 1,
         'resource_master.block.init_epsilon': 1.0,  # normalized
         'resource_master.block.init_delta': 1.0e-6,  # only used for rdp should be small < 1
-        'resource_master.dp_policy.is_rdp.mechanism': RdpMechanism.GAUSSIAN,
+        'resource_master.dp_policy.is_rdp.mechanism':  RdpMechanism.GAUSSIAN,
         'resource_master.dp_policy.is_rdp.rdp_bound_mode': RdpBoundMode.PARTIAL_BOUNDED_RDP,  # PARTIAL_BOUNDED_RDP
         'resource_master.dp_policy.is_rdp.dominant_resource_share': DominantRdpShareType.DPS_RDP_alpha_positive_budget,
         'resource_master.block.arrival_interval': 10,
@@ -59,20 +60,20 @@ if __name__ == '__main__':
         'resource_master.dp_policy.dpf_family.grant_top_small': False,  # false: best effort alloc
         # only continous leading small tasks in queue are granted
         # DpPolicyType.DP_POLICY_FCFS
-        # DpPolicyType.DP_POLICY_RR_T  DpPolicyType.DP_POLICY_RR_N DpPolicyType.DP_POLICY_RR_N
+        # DpPolicyType.DP_POLICY_RR_T  DpPolicyType.DP_POLICY_RR_N DpPolicyType.DP_POLICY_RR_NN
         # DpPolicyType.DP_POLICY_DPF_N DpPolicyType.DP_POLICY_DPF_T  DpPolicyType.DP_POLICY_DPF_NA
         # todo fcfs rdp
         # 'resource_master.dp_policy': DpPolicyType.DP_POLICY_FCFS,
         # policy
         'sim.duration': '300 s',
         'task.timeout.interval': 21,
-        'task.timeout.enabled': False,
-        'task.arrival_interval': 1,
+        'task.timeout.enabled': True,
+        'task.arrival_interval': rdp_arrival_itvl,
         'resource_master.dp_policy.is_admission_control_enabled': False,
         'resource_master.dp_policy.is_rdp': True,
-        'resource_master.dp_policy': None,
-        'resource_master.dp_policy.denominator': None,
-        'resource_master.block.lifetime': None,  # policy level param
+        'resource_master.dp_policy': DpPolicyType.DP_POLICY_DPF_N,
+        'resource_master.dp_policy.denominator': N_rdp,
+        'resource_master.block.lifetime': T_rdp,  # policy level param
         # workload
         'resource_master.block.is_static': False,
         'resource_master.block.init_amount': 11,  # for block elephant demand
@@ -85,13 +86,13 @@ if __name__ == '__main__':
         'resource_master.memory_capacity': 624,  # in GB, assume granularity is 1GB
         'resource_master.gpu_capacity': 8,  # in cards
         'resource_master.clock.tick_seconds': 25,
-        'resource_master.clock.dpf_adaptive_tick': True,
+        'sim.clock.adaptive_tick': True,
         'sim.db.enable': True,
         'sim.db.persist': True,
         'sim.dot.colorscheme': 'blues5',
         'sim.dot.enable': False,
         # 'sim.duration': '300000 s',  # for rdp
-        'sim.runtime.timeout': 60 * 24,  # in min
+        'sim.runtime.timeout': 60,  # in min
         # 'sim.duration': '10 s',
         'sim.gtkw.file': 'sim.gtkw',
         'sim.gtkw.live': False,
@@ -104,15 +105,14 @@ if __name__ == '__main__':
         'sim.vcd.dump_file': 'sim_dp.vcd',
         'sim.vcd.enable': False,
         'sim.vcd.persist': False,
-        'sim.workspace': 'results/workspace_%s'
-        % datetime.now().strftime("%m-%d-%HH-%M-%S"),
+        'sim.workspace': workspace_dir,
         'sim.workspace.overwrite': True,
     }
     ## single block setup for reproduce result of submission
-    config['resource_master.block.is_static'] = False
-    config['resource_master.block.init_amount'] = 11
-    # config['task.arrival_interval'] = 1 # unit
-    config['task.demand.num_blocks.mice_percentage'] = 75
+    config['resource_master.block.is_static'] = True
+    config['resource_master.block.init_amount'] = 1
+    config['task.arrival_interval'] = 1  # unit
+    config['task.demand.num_blocks.mice_percentage'] = 100
 
     mice_fraction = [0, 25, 50, 75, 100]
     # timeout = 50
@@ -133,14 +133,10 @@ if __name__ == '__main__':
     dp_max_amount = 100
     dp_subconfig = Config()
     dp_subconfig.is_rdp = False
-    aligned_N = None  # [int(10 * 3.1 ** x) for x in range(8)]
-    dp_arrival_itvl_light = 0.078125
-    dp_arrival_itvl_heavy = 0.004264781
-    dp_subconfig.dp_arrival_itvl = dp_arrival_itvl_light  # dp contention point
-    # dp_subconfig.dp_arrival_itvl = dp_arrival_itvl_heavy  # rdp contention point
-    N_scale_factor = [0.10, 0.50, 0.75, 1.00, 1.25, 1.75, 2.1]  # for rdp and dp
-    N_scale_factor_ext = [2.75, 3.25, 3.75, 7.5, 11.25, 15, 30, 60, 100]  # for dp only
-    # num_arrivals_multiplier = 2.0 # for sim_duration actual arrived tasks / max allocable tasks
+    N_scale_factor = [0.10, 0.50, 0.75, 1.00, 1.25, 1.75, 2.00, 2.25, 2.75, 3.25]
+    num_arrivals_multiplier = (
+        2.25 * 1.05
+    )  # for sim_duration actual arrived tasks / max allocable tasks
     # assert num_arrivals_multiplier in N_scale_factor
     dp_subconfig.dp_policy = [
         DpPolicyType.DP_POLICY_FCFS,
@@ -149,32 +145,25 @@ if __name__ == '__main__':
         DpPolicyType.DP_POLICY_RR_T,
         DpPolicyType.DP_POLICY_RR_N,
     ]
-    DP_N = dp_subconfig.denominator = [1] + [
-        dp_max_amount * i for i in N_scale_factor + N_scale_factor_ext
-    ]
-    if aligned_N is not None:
-        DP_N = dp_subconfig.denominator = aligned_N
+    DP_N = dp_subconfig.denominator = [1] + [dp_max_amount * i for i in N_scale_factor]
     DP_T = dp_subconfig.block_lifetime = [
-        N * dp_subconfig.dp_arrival_itvl for N in DP_N
+        N * config['task.arrival_interval'] for N in DP_N
     ]
     dp_subconfig.sim_duration = '%d s' % (
-        config['resource_master.block.arrival_interval'] * 30 # * 0.01 # fixme
+        config['task.arrival_interval'] * dp_max_amount * num_arrivals_multiplier
     )
-    # dp_subconfig.sim_duration = '%d s' % (dp_subconfig.dp_arrival_itvl * dp_max_amount * num_arrivals_multiplier)
-    # dp_subconfig.sim_duration = '11 s'
     # dp_timeout = 50 * dp_max_amount * config['task.arrival_interval'] * config[
     #     'task.demand.epsilon.mice']  # at max, 100 tasks waiting in the queue
     # 10 is the multiplier of dp between elephant and mice
     dp_timeout = (
-        3 * (4 + 1) * 100 * dp_subconfig.dp_arrival_itvl
-    )  # at max, 1500 tasks waiting in the queue
-    if eval_dp:
+        3 * 100 * config['task.arrival_interval']
+    )  # at max, 100 tasks waiting in the queue
+    if run_dp:
         for p in dp_subconfig.dp_policy:
             if p == DpPolicyType.DP_POLICY_FCFS:
                 config_list.extend(
                     list(
                         product(
-                            [dp_subconfig.dp_arrival_itvl],
                             [dp_timeout],
                             [dp_subconfig.is_rdp],
                             [dp_subconfig.sim_duration],
@@ -188,7 +177,6 @@ if __name__ == '__main__':
                 config_list.extend(
                     list(
                         product(
-                            [dp_subconfig.dp_arrival_itvl],
                             [dp_timeout],
                             [dp_subconfig.is_rdp],
                             [dp_subconfig.sim_duration],
@@ -202,7 +190,6 @@ if __name__ == '__main__':
                 config_list.extend(
                     list(
                         product(
-                            [dp_subconfig.dp_arrival_itvl],
                             [dp_timeout],
                             [dp_subconfig.is_rdp],
                             [dp_subconfig.sim_duration],
@@ -216,7 +203,6 @@ if __name__ == '__main__':
                 config_list.extend(
                     list(
                         product(
-                            [dp_subconfig.dp_arrival_itvl],
                             [dp_timeout],
                             [dp_subconfig.is_rdp],
                             [dp_subconfig.sim_duration],
@@ -230,7 +216,6 @@ if __name__ == '__main__':
                 config_list.extend(
                     list(
                         product(
-                            [dp_subconfig.dp_arrival_itvl],
                             [dp_timeout],
                             [dp_subconfig.is_rdp],
                             [dp_subconfig.sim_duration],
@@ -253,34 +238,27 @@ if __name__ == '__main__':
     #
     rdp_subconfig = Config()
     rdp_subconfig.is_rdp = True
-    rdp_subconfig.rdp_arrival_itvl = dp_arrival_itvl_heavy  # contention point
+
     rdp_subconfig.dp_policy = [DpPolicyType.DP_POLICY_FCFS, DpPolicyType.DP_POLICY_DPF_T, DpPolicyType.DP_POLICY_DPF_N]
     RDP_N = rdp_subconfig.denominator = [1] + [
         int(rdp_max_amount * n) for n in N_scale_factor
     ]
-
-    if aligned_N is not None:
-        RDP_N = rdp_subconfig.denominator = aligned_N
     RDP_T = rdp_subconfig.block_lifetime = [
-        N * rdp_subconfig.rdp_arrival_itvl for N in RDP_N
+        N * config['task.arrival_interval'] for N in RDP_N
     ]
     rdp_subconfig.sim_duration = '%d s' % (
-        config['resource_master.block.arrival_interval'] * 30 # * 0.01 # fixme
+        config['task.arrival_interval'] * rdp_max_amount * num_arrivals_multiplier
     )
-    # rdp_subconfig.sim_duration = '%d s' % (rdp_subconfig.rdp_arrival_itvl* rdp_max_amount * num_arrivals_multiplier)
-    # rdp_subconfig.sim_duration = '11 s'
-
     # 100 is the multiplier of dp between elephant and mice
     rdp_timeout = (
-        3 * (4 + 1) * 100 * rdp_subconfig.rdp_arrival_itvl
-    )  # at max, 1500 tasks waiting in the queue
-    if eval_rdp:
+        3 * 100 * config['task.arrival_interval']
+    )  # at max, 100 tasks waiting in the queue
+    if run_rdp:
         for p in rdp_subconfig.dp_policy:
             if p == DpPolicyType.DP_POLICY_FCFS:
                 config_list.extend(
                     list(
                         product(
-                            [rdp_subconfig.rdp_arrival_itvl],
                             [rdp_timeout],
                             [rdp_subconfig.is_rdp],
                             [rdp_subconfig.sim_duration],
@@ -294,7 +272,6 @@ if __name__ == '__main__':
                 config_list.extend(
                     list(
                         product(
-                            [rdp_subconfig.rdp_arrival_itvl],
                             [rdp_timeout],
                             [rdp_subconfig.is_rdp],
                             [rdp_subconfig.sim_duration],
@@ -308,7 +285,6 @@ if __name__ == '__main__':
                 config_list.extend(
                     list(
                         product(
-                            [rdp_subconfig.rdp_arrival_itvl],
                             [rdp_timeout],
                             [rdp_subconfig.is_rdp],
                             [rdp_subconfig.sim_duration],
@@ -320,13 +296,12 @@ if __name__ == '__main__':
                 )
             # elif p == DpPolicyType.DP_POLICY_RR_T:
             #     config_list.append(product([rdp_subconfig.is_rdp],[rdp_subconfig.sim_duration],[p],[None],[RDP_T]))
-            # elif p == DpPolicyType.DP_POLICY_RR_N:
+            # elif p == DpPolicyType.DP_POLICY_RR_NN:
             #     config_list.append(product([rdp_subconfig.is_rdp],[rdp_subconfig.sim_duration],[p],[RDP_N],[None]))
             else:
                 raise Exception()
 
     real_config_fields = [
-        'task.arrival_interval',
         'task.timeout.interval',
         'resource_master.dp_policy.is_rdp',
         'sim.duration',
@@ -345,5 +320,3 @@ if __name__ == '__main__':
     simulate_factors(config, test_factors, Top, config_filter=load_filter)
 
     # shutil.copyfile(__file__, os.path.join(config['sim.workspace'], 'saved_config.py'))
-
-
