@@ -1,34 +1,22 @@
-# Copyright (c) Tao Luo<taoluo71@outlook.com>. All Rights Reserved
-# license MIT
-
-WITH_PROFILE = 0
-
+# Copyright (c) Tao Luo<tao.luo@columbia.edu>. All Rights Reserved
+# license Apache
 import time
 import heapq as hq
 
-# from argparse import ArgumentParser
 from datetime import timedelta
 from functools import partial
 from itertools import count, tee
 import simpy
 import timeit
 
-# from numba import jit
 
 import math
 from .utils.rdp import (
-    compute_rdp_epsilons_laplace,
     compute_rdp_epsilons_gaussian,
     gaussian_dp2sigma,
 )
 from operator import add, sub
 
-if WITH_PROFILE:
-    import line_profiler
-    import atexit
-
-    profile = line_profiler.LineProfiler()
-    atexit.register(profile.print_stats)
 
 from .utils.misc import max_min_fair_allocation, defuse
 from .utils.configs import *
@@ -44,11 +32,10 @@ from .utils.exceptions import *
 import shutil
 import os
 
-# from simpy import Container, Resource, Store, FilterStore, Event
 from vcd.gtkw import GTKWSave
 
 from typing import List
-import random
+
 from pyDigitalWaveTools.vcd.parser import VcdParser
 import yaml
 from desmod.component import Component
@@ -69,39 +56,25 @@ class Top(Component):
         self.tasks = Tasks(self)
         self.resource_master = ResourceMaster(self)
 
-        # tick_seconds = self.env.config['resource_master.clock.tick_seconds']
         if self.env.config['sim.clock.adaptive_tick']:
             tick_seconds = (
                     self.env.config['task.arrival_interval'] * 0.5
             )  # median: avg arrival time x0.68
-            self.env.config['resource_master.clock.tick_seconds'] = tick_seconds
-        tick_seconds = 0.1
+        else:
+            tick_seconds = self.env.config['resource_master.clock.tick_seconds']
         self.global_clock = Clock(tick_seconds, self)
         self.add_process(self._timeout_stop)
 
     def _save_config(self):
-        # print(os.getcwd())
-        # with open(os.path.join('./ , os.path.basename(self.env.config['sim.main_file']) ), 'w') as f:
         if self.env.config.get('sim.main_file'):
             shutil.copy(self.env.config['sim.main_file'],  os.path.basename(self.env.config['sim.main_file']) )
-            # print(self.env.config['sim.main_file'], "xxxx")
-            # shutil.copy(self.env.config['sim.main_file'],  "xxxx")
-            #              os.path.basename(self.env.config['sim.main_file'] + "xxxx"))
         if self.env.config['workload_test.enabled']:
             shutil.copy(self.env.config['workload_test.workload_trace_file'], os.path.join('./', os.path.basename(self.env.config['workload_test.workload_trace_file']) ))
 
 
     def _check_odsi_artifact_features_only(self):
 
-        if self.env.config['resource_master.dp_policy.is_rdp.mechanism'].value == DISABLED_FLAG:
-            raise Exception("this feature is disabled for OSDI'21 artifact release, set ENABLE_OSDI21_ARTIFACT_ONLY in configs.py to enable it")
-        elif self.env.config['resource_master.dp_policy.is_rdp.rdp_bound_mode'].value == DISABLED_FLAG:
-            raise Exception("this feature is disabled for OSDI'21 artifact release, set ENABLE_OSDI21_ARTIFACT_ONLY in configs.py to enable it")
-        elif self.env.config['resource_master.dp_policy.is_rdp.dominant_resource_share'].value == DISABLED_FLAG:
-            raise Exception("this feature is disabled for OSDI'21 artifact release, set ENABLE_OSDI21_ARTIFACT_ONLY in configs.py to enable it")
-        elif self.env.config['resource_master.dp_policy.dpf_family.dominant_resource_share'].value == DISABLED_FLAG:
-            raise Exception("this feature is disabled for OSDI'21 artifact release, set ENABLE_OSDI21_ARTIFACT_ONLY in configs.py to enable it")
-        elif self.env.config['resource_master.dp_policy'].value == DISABLED_FLAG:
+        if self.env.config['resource_master.dp_policy'].value == DISABLED_FLAG:
             raise Exception("this feature is disabled for OSDI'21 artifact release, set ENABLE_OSDI21_ARTIFACT_ONLY in configs.py to enable it")
         else:
             return True
@@ -120,7 +93,7 @@ class Top(Component):
         self.connect(self.resource_master, 'global_clock')
 
     @classmethod
-    def pre_init(cls, env):  # fixme: copyright
+    def pre_init(cls, env):
 
         with open(env.config['sim.gtkw.file'], 'w') as gtkw_file:
             gtkw = GTKWSave(gtkw_file)
@@ -150,7 +123,6 @@ class Top(Component):
 
     def get_result_hook(self,result):
         pass
-        # if os.path.isfile(self.env.config['sim.main_file']):
 
 
 class Clock(Component):
@@ -266,9 +238,6 @@ class ResourceMaster(Component):
                 pass
             else:
                 raise NotImplementedError()
-        self.rdp_bound_mode = self.env.config[
-            'resource_master.dp_policy.is_rdp.rdp_bound_mode'
-        ]
 
         self.unused_dp = DummyPool(self.env)
 
@@ -528,12 +497,6 @@ class ResourceMaster(Component):
         assert self.is_centralized_quota_sched
         # calculate DR share, match, allocate,
         # update DRS if new quota has over lap with tasks
-        dp_drs_type = self.env.config[
-            'resource_master.dp_policy.dpf_family.dominant_resource_share'
-        ]
-        rdp_drs_type = self.env.config[
-            'resource_master.dp_policy.is_rdp.dominant_resource_share'
-        ]
 
         while True:
             doorbell = self.dp_sched_mail_box.when_any()
@@ -581,45 +544,13 @@ class ResourceMaster(Component):
             )
             # cal DRS
             if not self.is_rdp:
-                if dp_drs_type == DominantDpShareType.DPS_DP_DEFAULT:
-                    if has_quota_increment:
-                        self._cal_drs_dp_default_w_newquota(
-                            quota_incre_lower_bound, quota_incre_upper_bound
-                        )
-                    else:
-                        self._cal_drs_dp_default_wo_newquota(new_arrival_tid)
-
-                elif dp_drs_type == DominantDpShareType.DPS_DP_L_Inf:
-                    self._cal_drs_dp_L_Inf(new_arrival_tid)
-
-                # other DRS are independent from arrival task
-                elif dp_drs_type == DominantDpShareType.DPS_DP_L2:
-                    self._cal_drs_dp_L2(new_arrival_tid)
-
-                elif dp_drs_type == DominantDpShareType.DPS_DP_L1:
-                    self._cal_drs_dp_L1(new_arrival_tid)
-            # rdp drs
-                else:
-                    raise Exception("undefined dominant share type")
-
+                self._cal_drs_dp_L_Inf(new_arrival_tid)
 
             else:
                 assert self.is_rdp
-
-                if rdp_drs_type == DominantRdpShareType.DPS_RDP_alpha_positive_balance:
-                    self._cal_drs_rdp_a_positive()
-
-
-                elif rdp_drs_type == DominantRdpShareType.DPS_RDP_alpha_positive_budget:
-                    self._cal_drs_rdp_a_all2()
-
-                elif rdp_drs_type == DominantRdpShareType.DPS_RDP_dominant_deduct:
-                    self._cal_drs_rdp_dom_deduct()
-                else:
-                    raise Exception("undefined dominant share type")
+                self._cal_drs_rdp_a_all2()
 
             permit_dp_task_order = None
-            # if permit_dp_task_order is None:
             # optimization for no new quota case
             if (not has_quota_increment) and len(new_arrival_tid) != 0:
                 new_arrival_drs = (
@@ -709,38 +640,28 @@ class ResourceMaster(Component):
                 old_demand_b_idx = task_demand_block_idx[0]
                 old_item = self.block_dp_storage.items[old_demand_b_idx]
                 new_demand_b_idx = task_demand_block_idx[-1]
+                # check oldest item this will check and reject for dpft
                 if old_item["retire_event"].triggered:
                     assert old_item["retire_event"].ok
                     b = old_demand_b_idx
-                    # if not self.is_rdp:
                     if this_epoch_unused_quota[b] < task_demand_epsilon:
                         should_reject = True
-
-                ## fixme why not is_dpft: for dpft unnecessary to check
+                # check latest item
                 elif (
                         not self.is_dp_policy_dpft and new_demand_b_idx != old_demand_b_idx
                 ):
                     new_item = self.block_dp_storage.items[new_demand_b_idx]
                     if new_item["retire_event"] and new_item["retire_event"].triggered:
-                        ## copied from above, same standard of rejection
+
                         b = new_demand_b_idx
-                        # if not self.is_rdp:
                         if this_epoch_unused_quota[b] < task_demand_epsilon:
                             should_reject = True
-                        # else:
-                        #     for j, e_rdp in enumerate(task_demand_e_rdp):
-                        #         if e_rdp <= self.block_dp_storage.items[b]['rdp_budget_curve'][j] - \
-                        #                 self.block_dp_storage.items[b]["rdp_consumption"][j]:
-                        #             break
-                        #     else:
-                        #         should_reject = True
 
                 if should_reject:
                     this_task["dp_permitted_event"].fail(DpBlockRetiredError())
                     dp_rejected_task_ids.add(t_id)
                     dp_processed_task_idx.append(idx)
 
-    # @profile
     def best_effort_rdp_sched_n_commit_reject(
             self,
             dp_processed_task_idx,
@@ -750,60 +671,20 @@ class ResourceMaster(Component):
             permitted_task_ids,
     ):
         for drs, t in permit_dp_task_order:
-            # if should_grant_top_small and (not are_leading_tasks_ok):
-            #     break
             t_idx, t_id = t
             this_task = self.task_state[t_id]
             this_request = this_task["resource_request"]
 
-            # drs = this_task['dominant_resource_share']
-            # assert drs is not None
             task_demand_block_idx = this_request['block_idx']
 
             task_demand_e_rdp = this_request['e_rdp']
 
-            is_quota_insufficient_all = False  # reject  for partial bound mode
-            is_quota_insufficient_any = False  # reject  for full bound mode
-            for b in task_demand_block_idx:
-                # not_permitted = None
-                # is_rejected = None
-
-                ## partial bounded mode block, K==N, retired
-                if self.rdp_bound_mode == RdpBoundMode.PARTIAL_BOUNDED_RDP or (
-                        self.block_dp_storage.items[b]["retire_event"].triggered
-                        and self.block_dp_storage.items[b]["retire_event"].ok
-                ):
-                    for j, e_d in enumerate(task_demand_e_rdp):
-                        if (
-                                e_d
-                                <= self.block_dp_storage.items[b]['rdp_quota_balance'][j]
-                        ):
-                            break
-                    else:
-                        is_quota_insufficient_all = True
-                        break
-
-                ## fully bounded mode block
-                else:
-                    assert self.rdp_bound_mode == RdpBoundMode.FULL_BOUNDED_RDP
-                    for j, e_d in enumerate(task_demand_e_rdp):
-                        if (
-                                self.block_dp_storage.items[b]['rdp_budget_curve'][j] > 0
-                                and e_d
-                                > self.block_dp_storage.items[b]['rdp_quota_balance'][j]
-                        ):
-                            is_quota_insufficient_any = True
-                            break
-                    if is_quota_insufficient_any:
-                        break
-
+            violated_blk, is_quota_insufficient_all = self.is_all_block_quota_sufficient(task_demand_block_idx, task_demand_e_rdp)
 
             # task is permitted
-            if not (is_quota_insufficient_all or is_quota_insufficient_any):
+            if not is_quota_insufficient_all :#
                 drs = this_task['dominant_resource_share']
                 self.debug(t_id, "DP permitted, Dominant resource share: %.3f" % drs)
-                # for i in task_demand_block_idx:
-                #     this_epoch_unused_quota[i] -= task_demand_epsilon
                 this_task["dp_permitted_event"].succeed()
                 permitted_task_ids.add(t_id)
                 permitted_blk_ids.update(task_demand_block_idx)
@@ -813,21 +694,36 @@ class ResourceMaster(Component):
                 this_task["dp_committed_event"].succeed()
                 this_task['is_dp_granted'] = True
                 dp_processed_task_idx.append(t_idx)
-            else: # is_quota_insufficient_all or is_quota_insufficient_any
-                if self.block_dp_storage.items[b]["retire_event"].triggered:
-                    assert self.block_dp_storage.items[b]["retire_event"].ok
+            else: # is_quota_insufficient_all
+                if self.block_dp_storage.items[violated_blk]["retire_event"].triggered:
+                    assert self.block_dp_storage.items[violated_blk]["retire_event"].ok
                     dp_rejected_task_ids.add(t_id)
 
                     this_task["dp_permitted_event"].fail(
                         DpBlockRetiredError(
-                            "block %d retired, insufficient unlocked rdp left" % b
+                            "block %d retired, insufficient unlocked rdp left" % violated_blk
                         )
                     )
-                    # this_task["dp_committed_event"].fail(DpBlockRetiredError()) #???? delay to handling permission
                     this_task['is_dp_granted'] = False
                     dp_processed_task_idx.append(t_idx)
 
         return
+
+    def is_all_block_quota_sufficient(self, task_demand_block_idx, task_demand_e_rdp):
+
+        for b in task_demand_block_idx:
+            for j, e_d in enumerate(task_demand_e_rdp):
+                if (
+                        e_d
+                        <= self.block_dp_storage.items[b]['rdp_quota_balance'][j]
+                ):
+                    break
+            else:
+                return b, True
+
+        else:
+
+            return None, False
 
     def _dpf_best_effort_dp_sched(
             self,
@@ -845,8 +741,6 @@ class ResourceMaster(Component):
                 break
             this_task = self.task_state[t_id]
             this_request = this_task["resource_request"]
-            # drs = this_task['dominant_resource_share']
-            # assert drs is not None
             task_demand_block_idx = this_request['block_idx']
 
             task_demand_epsilon = this_request['epsilon']
@@ -872,77 +766,6 @@ class ResourceMaster(Component):
                 dp_processed_task_idx.append(t_idx)
         return
 
-    def _cal_drs_rdp_dom_deduct(self):
-        for t_id in self.dp_waiting_tasks.items:
-            this_task = self.task_state[t_id]
-            this_request = this_task['resource_request']
-            # block wise
-            temp_max = -1
-            for b in this_request['block_idx']:
-                # for j, e in enumerate(this_request['e_rdp']):
-                # iterate over all alpha demand
-                rdp_demand = this_request['e_rdp']
-                rdp_budget_curve = self.block_dp_storage.items[b]["rdp_budget_curve"]
-                rdp_consumption = self.block_dp_storage.items[b]["rdp_consumption"]
-                rdp_budget_max = self.block_dp_storage.items[b]["global_epsilon_dp"]
-                temp_max = max(
-                    temp_max,
-                    self._cal_rdp_dominant_consumption(
-                        rdp_budget_curve, rdp_consumption, rdp_demand, rdp_budget_max
-                    ),
-                )
-
-            assert temp_max != -1
-            this_task['dominant_resource_share'] = temp_max
-
-    # def _cal_drs_rdp_a_all(self, permit_new_arrival_tid_only, new_arrival_tid):
-    #     permit_dp_task_order = []
-    #     hq.heapify(permit_dp_task_order)
-    #     # tasks_to_permit = []
-    #     if permit_new_arrival_tid_only:
-    #         tasks_to_permit = new_arrival_tid
-    #     else:
-    #         tasks_to_permit = self.dp_waiting_tasks.items
-    # 
-    #     for i, task in enumerate(tasks_to_permit):
-    #         if permit_new_arrival_tid_only:
-    #             # tasks_to_permit = new_arrival_tid
-    #             t_idx, t_id = task
-    #             # t_id =
-    #         else:
-    #             # tasks_to_permit = self.dp_waiting_tasks.items
-    #             t_idx = i
-    #             t_id = task
-    # 
-    #         this_task = self.task_state[t_id]
-    #         if (permit_new_arrival_tid_only or this_task['dominant_resource_share'] is None):
-    #             this_request = this_task['resource_request']
-    #             # block wise
-    #             temp_max = -1
-    #             for b in this_request['block_idx']:
-    #                 for j, e in enumerate(this_request['e_rdp']):
-    #                     # iterate over all alpha demand
-    #                     if self.block_dp_storage.items[b]["rdp_budget_curve"][j] > 0:
-    #                         normalized_e = (e / self.block_dp_storage.items[b]["rdp_budget_curve"][j]
-    #                                         )
-    #                         temp_max = max(temp_max, normalized_e)
-    #             assert temp_max != -1
-    #             this_task['dominant_resource_share'] = temp_max
-    #             # assert t_id in new_arrival_tid
-    #         if not permit_new_arrival_tid_only:
-    #             hq.heappush(
-    #                 permit_dp_task_order,
-    #                 (this_task['dominant_resource_share'], (t_idx, t_id)),
-    #             )
-    #         else:
-    #             hq.heappush(
-    #                 permit_dp_task_order,
-    #                 (this_task['dominant_resource_share'], (t_idx, t_id)),
-    #             )
-    #     return permit_dp_task_order
-    #     # else:
-    #     #     hq.heappush(permit_dp_task_order, (this_task['dominant_resource_share'], t_id))
-
     def _cal_drs_rdp_a_all2(self):
         for t_id in reversed(self.dp_waiting_tasks.items):
             this_task = self.task_state[t_id]
@@ -965,102 +788,8 @@ class ResourceMaster(Component):
 
 
 
-    def _cal_drs_rdp_a_positive(self):
-        for t_id in reversed(self.dp_waiting_tasks.items):
-            this_task = self.task_state[t_id]
-            this_request = this_task['resource_request']
-            # block wise
-            temp_max = -1
-            for b in this_request['block_idx']:
-                for j, e in enumerate(this_request['e_rdp']):
-                    # only consider alpha of positive or zero rdp left.
-                    if (
-                            self.block_dp_storage.items[b]["rdp_budget_curve"][j]
-                            > self.block_dp_storage.items[b]["rdp_consumption"][j]
-                    ):  # (budget - consumption > 0)
-                        normalized_e = (
-                                e / self.block_dp_storage.items[b]["rdp_budget_curve"][j]
-                        )
-                        temp_max = max(temp_max, normalized_e)
-            assert temp_max != -1
-            this_task['dominant_resource_share'] = temp_max
 
-    def _cal_drs_dp_default_w_newquota(self, quota_incre_lower_bound, quota_incre_upper_bound):
-        # iterate from newest task
-        for t_id in reversed(self.dp_waiting_tasks.items):
-            # update DRS
-            this_task = self.task_state[t_id]
-            this_request = this_task['resource_request']
-            request_blk_upper_bound = this_request['block_idx'][-1]
-            request_blk_lower_bound = this_request['block_idx'][0]
-            if (
-                    not (
-                            request_blk_upper_bound < quota_incre_lower_bound
-                            or request_blk_lower_bound > quota_incre_upper_bound
-                    ) or this_task['dominant_resource_share'] is None
-            ):
-                # optimization
-                if self.is_dp_policy_dpft:
-                    # only care newest blk, has least quota
-                    i = this_request['block_idx'][-1]
-                    quota_amount = (
-                            self.env.config["resource_master.block.init_epsilon"]
-                            - self.block_dp_storage.items[i]['dp_container'].level
-                    )
-                    if quota_amount:
-                        this_task['dominant_resource_share'] = (
-                                this_request['epsilon'] / quota_amount
-                        )
-                    else:
-                        this_task['dominant_resource_share'] = float('inf')
 
-                else:
-                    resource_shares = []
-                    for i in this_request['block_idx']:
-                        quota_amount = (
-                                self.env.config["resource_master.block.init_epsilon"]
-                                - self.block_dp_storage.items[i]['dp_container'].level
-                        )
-                        if quota_amount:
-                            rs = this_request['epsilon'] / quota_amount
-                            assert rs > 0
-                            resource_shares.append(rs)
-                        else:
-                            self.task_state[t_id]['dominant_resource_share'] = float(
-                                'inf'
-                            )
-                            break
-                    else:
-                        self.task_state[t_id]['dominant_resource_share'] = max(
-                            resource_shares
-                        )
-
-    def _cal_drs_dp_default_wo_newquota(self, new_arrival_tid):
-        for _, new_task_id in new_arrival_tid:
-            this_task = self.task_state[new_task_id]
-            this_request = this_task["resource_request"]
-            # block_num = len(this_request['block_idx'])
-            # omit sqrt operation for performance, preserve the correctness/monotonicity.
-            # this_task['dominant_resource_share'] = (this_request['epsilon'] ** 2) * block_num
-            resource_shares = []
-            for i in this_request['block_idx']:
-                this_block = self.block_dp_storage.items[i]
-                quota_amount = this_block['dp_quota'].level
-                if quota_amount:
-                    rs = this_request['epsilon'] / quota_amount
-                else:
-                    rs = float('inf')
-                assert rs > 0
-                resource_shares.append(rs)
-            this_task['dominant_resource_share'] = max(resource_shares)
-
-    def _cal_drs_dp_L1(self, new_arrival_tid):
-        for _, new_task_id in new_arrival_tid:
-            this_task = self.task_state[new_task_id]
-            this_request = this_task['resource_request']
-            block_num = len(this_request['block_idx'])
-            # omit sqrt operation for performance, maintain the correctness/monotonicity.
-            this_task['dominant_resource_share'] = this_request['epsilon'] * block_num
 
     def _cal_drs_dp_L_Inf(self, new_arrival_tid):
         for _, new_task_id in new_arrival_tid:
@@ -1069,18 +798,6 @@ class ResourceMaster(Component):
                 'epsilon'
             ]
 
-    def _cal_drs_dp_L2(self, new_arrival_tid):
-        for _, new_task_id in new_arrival_tid:
-            this_task = self.task_state[new_task_id]
-            this_request = this_task['resource_request']
-            block_num = len(this_request['block_idx'])
-            # omit sqrt operation for performance, maintain the correctness/monotonicity.
-            this_task['dominant_resource_share'] = (
-                                                           this_request['epsilon'] ** 2
-                                                   ) * block_num
-
-    if WITH_PROFILE:
-        scheduling_dp_loop = profile(scheduling_dp_loop)
 
     def allocator_frontend_loop(self):
         while True:
@@ -1127,7 +844,6 @@ class ResourceMaster(Component):
                         "resource_released_event"
                     ] = self.env.event()
 
-                    # self.task_state[msg["task_id"]]["retired_blocks_in_demand"] = [] if self.is_dp_policy_dpf else None
                     self.task_state[msg["task_id"]]["dominant_resource_share"] = None
 
                     self.task_state[msg["task_id"]]["execution_proc"] = msg.pop(
@@ -1209,7 +925,6 @@ class ResourceMaster(Component):
 
                 this_block = self.block_dp_storage.items[blk_idx]
                 dp_container = this_block["dp_container"]
-                # if isinstance(err, DprequestTimeoutError):
                 if task_id in this_block['waiting_tid2accum_containers']:
                     this_block['waiting_tid2accum_containers'].pop(task_id)
                     removed_accum_cn.append(task_id)
@@ -1242,12 +957,6 @@ class ResourceMaster(Component):
                 task_id, "unfullfilled block demand getter: %s" % unfullfilled_blk
             )
 
-            # if isinstance(err,DprequestTimeoutError):
-            #     assert len(missing_waiting_accum_cn) == 0
-            # else:
-            #     assert len(missing_waiting_accum_cn) <= 1
-            # for b_idx in missing_waiting_accum_cn:
-            #     self.block_dp_storage.items[b_idx]['block_proc'].is_alive
             return 1
 
 
@@ -1356,7 +1065,6 @@ class ResourceMaster(Component):
         resource_demand = this_task["resource_request"]
         blocks_retired_by_this_task = []
         dp_committed_event = this_task["dp_committed_event"]
-        # if not self.is_rdp:
         # quota increment
         quota_increment_idx = []
         retired_blocks_before_arrival = []
@@ -1370,11 +1078,6 @@ class ResourceMaster(Component):
                 retired_blocks_before_arrival.append(i)
                 if self.does_task_handler_unlock_quota:
                     continue
-                # continue
-            # elif self.is_T_based_retire and self.env.now - this_block["create_time"] > self.env.config['resource_master.block.lifetime']:
-            #     retired_blocks_before_arrival.append(i)
-            #     continue
-            # retire block by task
 
             # unlock quota by task
             elif self.does_task_handler_unlock_quota:
@@ -1382,10 +1085,8 @@ class ResourceMaster(Component):
 
             # update quota
             if not self.is_rdp:
-                # if self.is_centralized_quota_sched:
                 if self.is_dp_policy_dpfn:
                     assert not this_block["retire_event"].triggered
-                    # assert this_block["retire_event"].ok
                     quota_increment = self.env.config["resource_master.block.init_epsilon"] / self.denom
 
                     assert (
@@ -1408,8 +1109,6 @@ class ResourceMaster(Component):
                 elif self.is_dp_policy_dpft:
                     pass
                 elif self.is_dp_policy_dpfna:
-                    # last_arrival_time = this_block["last_task_arrival_time"]
-
                     assert not this_block["retire_event"].triggered
                     age = self.env.now - this_block["create_time"]
 
@@ -1421,21 +1120,16 @@ class ResourceMaster(Component):
                             self.env.config["resource_master.block.init_epsilon"]
                             - this_block['dp_container'].level
                     )
-                    # assert -self.env.config['sim.numerical_delta'] < target_quota - target_quota1 < self.env.config['sim.numerical_delta']
                     get_amount = target_quota - released_quota
                     this_block['dp_container'].get(get_amount)
                     this_block['dp_quota'].put(get_amount)
                     new_quota_unlocked = True
-                    # else:
-                    #     # assert this_block["retire_event"].ok
-                    #     raise Exception('fweaew')
 
                 elif self.is_dp_policy_rr_n2:
                     if not this_block[
                         "retire_event"
                     ].triggered:  # sched  finished wont be allocated
                         # centralized update;
-                        # elif self.is_dp_policy_rr_n:
                         quota_increment = (
                                 self.env.config["resource_master.block.init_epsilon"]
                                 / self.denom
@@ -1466,10 +1160,6 @@ class ResourceMaster(Component):
                         assert not this_block['block_proc'].is_alive
                         inactive_block_sched_procs.append(i)
                         continue
-                    # else:
-                    #     raise Exception('fweaew')
-                    # interrupt dp_waiting_proc
-                    # retired_blocks_before_arrival.append(i)
 
                 elif self.is_dp_policy_rr_t:
                     if not this_block['block_proc'].is_alive:
@@ -1499,8 +1189,6 @@ class ResourceMaster(Component):
                         ].copy()
 
                     new_quota_unlocked = True
-                    # else:
-                    #     raise Exception('fweaew')
 
                 elif self.is_dp_policy_dpft:
                     pass
@@ -1556,7 +1244,6 @@ class ResourceMaster(Component):
                     )
                 )
                 # assert not dp_committed_event.ok
-        # if self.is_rdp:
         if IS_DEBUG and len(blocks_retired_by_this_task):
             self.debug(
                 task_id,
@@ -1614,9 +1301,6 @@ class ResourceMaster(Component):
                 raise DprequestTimeoutError()
 
         except (DprequestTimeoutError, DpBlockRetiredError) as err:
-            # remove from wait queue
-            # idx = self.dp_waiting_tasks.items.index(task_id, 0)
-            # del self.dp_waiting_tasks.items[idx]
             if isinstance(err, DprequestTimeoutError):
                 del_idx = self.dp_waiting_tasks.items.index(task_id)
 
@@ -1642,11 +1326,8 @@ class ResourceMaster(Component):
                 this_task["handler_proc_resource"].interrupt(
                     DpHandlerMessageType.DP_HANDLER_INTERRUPT_MSG
                 )
-            # if not self.is_rdp:
 
             dp_committed_event.fail(err)
-            # else:
-            #     assert dp_committed_event.triggered
 
             return 1
 
@@ -1833,7 +1514,6 @@ class ResourceMaster(Component):
                 self._rdp_update_quota_balance(block_id)
 
             self.dp_sched_mail_box.put([block_id])
-            # assert this_block["retire_event"] is False
             this_block["retire_event"].succeed()
             self._retired_blocks.add(block_id)
             return
@@ -1854,7 +1534,6 @@ class ResourceMaster(Component):
                         init_level - this_block["dp_container"].level
                 )
 
-                # if self.env.now + self.global_clock.seconds_per_tick >= this_block["end_of_life"]:
                 if t + 1 == total_ticks:
                     assert (
                             -self.env.config['sim.numerical_delta']
@@ -1893,7 +1572,6 @@ class ResourceMaster(Component):
         if not self.is_rdp:
             assert this_block["dp_container"].level == 0
 
-        # assert this_block["retire_event"] is False
         this_block["retire_event"].succeed()
         self._retired_blocks.add(block_id)
         # HACK quotad increment msg, to trigger waiting task exceptions
@@ -1906,7 +1584,7 @@ class ResourceMaster(Component):
                 self.env.config['resource_master.block.arrival_interval']
                 * self.env.config['task.demand.num_blocks.elephant']
                 * 1.01
-        )  # max(self.denom * self.env.config['task.arrival_interval'] * 1.1, self.env.config['resource_master.block.arrival_interval'])
+        )
         yield self.env.timeout(lifetime_ub)
         if not this_block['retire_event'].triggered:
             this_block['retire_event'].succeed()
@@ -1920,17 +1598,9 @@ class ResourceMaster(Component):
 
         # due to discretization, shift release during tick seceonds period to the start of this second.
         # therefore, last release should happen before end of life
-        # wait first to sync clock
-        # yield this_block["retire_event"]
         yield self.env.timeout(self.env.config['resource_master.block.lifetime'])
         # allocate in ascending order
-        # waiting_cn = [(cn.capacity, cn) for tid, cn in this_block["waiting_tid2accum_containers"].items() ]
-        # if (len(cn._get_waiters) != 0 and not cn._get_waiters[0].triggered) ]
         waiting_task_cn_mapping = this_block["waiting_tid2accum_containers"]
-        # {tid: cn for tid, cn in this_block["waiting_tid2accum_containers"].items()
-        #                            if (len(cn._get_waiters) == 1 and not cn._get_waiters[0].triggered)}
-
-        # if len(this_block["waiting_tid2accum_containers"]) > 0:
         if len(waiting_task_cn_mapping) > 0:
             total_alloc = 0  # this is inaccurate
             is_dp_sufficient = True
@@ -1982,19 +1652,10 @@ class ResourceMaster(Component):
         this_block = self.block_dp_storage.items[block_id]
         this_block["residual_dp"] = 0.0
 
-        # due to discretization, shift release during tick seceonds period to the start of this second.
-        # therefore, last release should happen before end of life
-        # wait first to sync clock
-        # yield self.global_clock.next_tick
-        # t0 = self.env.now
-        # total_ticks = (int((this_block["end_of_life"] - t0) / self.global_clock.seconds_per_tick) + 1)
         init_level = this_block["dp_container"].level
-        # ticker_counter = count()
-        # for t in range(total_ticks):
 
         while True:
 
-            # t = next(ticker_counter) + 1
             new_tid = yield this_block['_mail_box'].get()
             n = this_block['arrived_task_num']  # should update in task hander
             if n == self.denom:
@@ -2013,9 +1674,7 @@ class ResourceMaster(Component):
                         init_level - this_block["dp_container"].level
                 )
 
-            # if self.env.now + self.global_clock.seconds_per_tick >= this_block["end_of_life"]:
             elif n == self.denom:
-                # assert -self.env.config['sim.numerical_delta'] < this_block["dp_container"].level - get_amount < self.env.config['sim.numerical_delta']
                 get_amount = this_block["dp_container"].level
 
             if get_amount != 0:
@@ -2051,9 +1710,6 @@ class ResourceMaster(Component):
 
                 for tid, dp_alloc_amount in fair_allocation.items():
                     cn = this_block["waiting_tid2accum_containers"][tid]
-                    # get_amount = cn._get_waiters[0].amount
-                    # fill to trigger get
-                    # level_00 = cn.level
 
                     if (
                             -self.env.config['sim.numerical_delta']
@@ -2071,10 +1727,6 @@ class ResourceMaster(Component):
                     else:
                         cn.put(dp_alloc_amount)
 
-                # if this_block["residual_dp"] < self.env.config['sim.numerical_delta'] and t >= total_ticks:
-                #     break
-                # else:
-                #     yield self.global_clock.next_tick
         # now >= end of life
         # wait for dp getter event processed, reject untriggered get
         yield self.env.timeout(delay=0)
@@ -2087,7 +1739,6 @@ class ResourceMaster(Component):
             )
             for task_id in list(rej_waiting_task_cn_mapping.keys()):
                 cn = rej_waiting_task_cn_mapping[task_id]
-                # assert len(cn._get_waiters) == 1
                 # avoid getter triggered by cn
                 waiting_evt = cn._get_waiters.pop(0)
                 waiting_evt.fail(
@@ -2099,7 +1750,6 @@ class ResourceMaster(Component):
                 this_block["waiting_tid2accum_containers"].pop(task_id)
         else:
             self.debug("block %d out of dp, with NO waiting task" % block_id)
-        # assert this_block["retire_event"] is False
 
         return 0
 
@@ -2120,7 +1770,6 @@ class ResourceMaster(Component):
         )
         init_level = this_block["dp_container"].level
         ticker_counter = count()
-        # for t in range(total_ticks):
         while True:
             t = next(ticker_counter) + 1
             get_amount = 0  # t + 1 > total_ticks
@@ -2130,9 +1779,7 @@ class ResourceMaster(Component):
                         init_level - this_block["dp_container"].level
                 )
 
-            # if self.env.now + self.global_clock.seconds_per_tick >= this_block["end_of_life"]:
             elif t == total_ticks:
-                # assert -self.env.config['sim.numerical_delta'] < this_block["dp_container"].level - get_amount < self.env.config['sim.numerical_delta']
                 get_amount = this_block["dp_container"].level
                 this_block["retire_event"].succeed()
 
@@ -2164,14 +1811,9 @@ class ResourceMaster(Component):
 
                 else:
                     this_block["residual_dp"] = 0.0
-                    # yield self.env.timeout(delay=0) # this may update residual ??????
 
                 for tid, dp_alloc_amount in fair_allocation.items():
                     cn = this_block["waiting_tid2accum_containers"][tid]
-                    # get_amount = cn._get_waiters[0].amount
-                    # assert get_amount==cn.capacity
-                    # fill to trigger get
-                    # level_00 = cn.level
                     if (
                             -self.env.config['sim.numerical_delta']
                             < (cn.capacity - cn.level) - dp_alloc_amount
@@ -2179,15 +1821,12 @@ class ResourceMaster(Component):
                     ):
                         dp_alloc_amount = cn.capacity - cn.level
                         cn.put(dp_alloc_amount)
-                        # yield self.env.timeout(0)
-                        # assert cn._get_waiters[0].triggered
                         this_block["waiting_tid2accum_containers"].pop(tid)
                         self.debug(
                             tid,
                             "accum containers granted and removed for block %s"
                             % block_id,
                         )
-                        # assert cn.level == cn._get_waiters[0].amount
                     else:
                         cn.put(dp_alloc_amount)
 
@@ -2203,8 +1842,7 @@ class ResourceMaster(Component):
         yield self.env.timeout(delay=0)
         rej_waiting_task_cn_mapping = this_block[
             "waiting_tid2accum_containers"
-        ]  # {tid: cn for tid, cn in this_block["waiting_tid2accum_containers"].items()
-        # if (len(cn._get_waiters) == 1 and not cn._get_waiters[0].triggered)}
+        ]
 
         if len(rej_waiting_task_cn_mapping) != 0:
             self.debug(
@@ -2213,7 +1851,6 @@ class ResourceMaster(Component):
             )
             for task_id in list(rej_waiting_task_cn_mapping.keys()):
                 cn = rej_waiting_task_cn_mapping[task_id]
-                # assert len(cn._get_waiters) == 1
                 # avoid getter triggered by cn
                 waiting_evt = cn._get_waiters.pop(0)
                 waiting_evt.fail(
@@ -2223,10 +1860,8 @@ class ResourceMaster(Component):
                     )
                 )
                 this_block["waiting_tid2accum_containers"].pop(task_id)
-            # self.debug("block %d run out of dp, accum containers removed for tasks %s" % (block_id, list(rej_waiting_task_cn_mapping.keys()) ))
         else:
             self.debug("block %d run out of dp, with NO waiting task" % block_id)
-        # assert this_block["retire_event"] is False
 
         return 0
 
@@ -2246,7 +1881,6 @@ class ResourceMaster(Component):
             assert cn.level == 0
             # inform mail box retire
             self.dp_sched_mail_box.put([b_idx])
-            # assert self.block_dp_storage.items[b_idx]["retire_event"] is False
             self.block_dp_storage.items[b_idx]["retire_event"].succeed()
             self._retired_blocks.add(b_idx)
             self.debug(
@@ -2283,8 +1917,6 @@ class ResourceMaster(Component):
                         )
                     )
                     return
-                # else:
-                # yield self.env.timeout(self.env.config["resource_master.block.arrival_interval"])
 
             # generate block_id
             cur_block_id = next(block_id)
@@ -2296,7 +1928,6 @@ class ResourceMaster(Component):
                 name=cur_block_id,
                 hard_cap=True,
             )
-            # alpha_samples = [1.0001, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6, 8, 16, 32, 64, ]
             rdp_budget_curve = []
             if self.is_rdp:
                 for a in sorted(ALPHAS):
@@ -2305,8 +1936,7 @@ class ResourceMaster(Component):
                     total_rdp = max(0, total_dp - math.log(1 / total_delta) / (a - 1))
                     rdp_budget_curve.append(
                         total_rdp
-                    )  # DummyPool(self.env, capacity=total_rdp, init=total_rdp, name=a, hard_cap=True)
-                # rdp_quota_balance = rdp_budget_curve.copy()
+                    )
 
             if self.is_T_based_retire:
                 EOL = self.env.now + self.env.config['resource_master.block.lifetime']
@@ -2332,16 +1962,14 @@ class ResourceMaster(Component):
                 "global_epsilon_dp": total_dp,
                 "dp_container": new_block,
                 "rdp_budget_curve": rdp_budget_curve,
-                # "rdp_quota_balance": rdp_quota_balance,
                 "rdp_quota_curve": [0.0, ] * len(rdp_budget_curve),
                 "rdp_consumption": [0.0, ] * len(rdp_budget_curve),
                 "rdp_quota_balance": [0.0, ]
                                      * len(rdp_budget_curve),  # balance = quota - consumption
                 "dp_quota": new_quota,  # for dpf policy
-                # lifetime :=  # of periods from born to end
+                # lifetime is # of periods from born to end
                 "end_of_life": EOL,
                 "waiting_tid2accum_containers": accum_cn_dict,  # task_id: container, for rate limiting policy
-                # 'is_dead': is_dead, # only for RR
                 "retire_event": self.env.event(),
                 'arrived_task_num': 0,
                 'last_task_arrival_time': None,
@@ -2372,11 +2000,8 @@ class ResourceMaster(Component):
                     raise NotImplementedError()
 
             elif self.is_dp_policy_dpft:
-                # if not self.is_rdp:
                 # one process for rdp and non-rdp
                 block_item['block_proc'] =  self.env.process(self._dpft_subloop_unlock_quota(cur_block_id))
-                # else:
-                #     raise NotImplementedError()
 
             elif self.is_dp_policy_dpfna:
                 block_item['retire_event'] = self.env.timeout(
@@ -2420,7 +2045,6 @@ class ResourceMaster(Component):
                     and this_container.level == 0
             )
 
-            # if not self.is_dp_policy_rr_n:# tolerate small numerical inaccuracy
             assert (
                            this_container.level + epsilon
                    ) < this_container.capacity + self.env.config['sim.numerical_delta']
@@ -2438,7 +2062,7 @@ class ResourceMaster(Component):
             unused_dp = []
             if (
                     self.is_centralized_quota_sched
-            ):  # :self.is_dp_policy_dpfn or self.is_dp_policy_dpft or self.is_dp_policy_dpfa:
+            ):  # :self.is_dp_policy_dpfn or self.is_dp_policy_dpft or self.is_dp_policy_dpfa
                 for i, block in enumerate(self.block_dp_storage.items):
                     if i in block_idx:
                         unused_dp.append(-round(block['dp_quota'].level, 2))
@@ -2588,7 +2212,6 @@ class Tasks(Component):
             self.db = None
 
         if self.env.config.get('task.demand.num_cpu.constant') is not None:
-            # self.debug("task cpu demand is fix %d " % self.env.config['task.demand.num_cpu.constant'])
             assert isinstance(self.env.config['task.demand.num_cpu.constant'], int)
             self.cpu_dist = lambda: self.env.config['task.demand.num_cpu.constant']
         else:
@@ -2610,7 +2233,6 @@ class Tasks(Component):
 
 
         if self.env.config.get('task.demand.completion_time.constant') is not None:
-            # self.debug("task completion time is fixed %d" % self.env.config['task.demand.completion_time.constant'])
             self.completion_time_dist = lambda: self.env.config[
                 'task.demand.completion_time.constant'
             ]
@@ -2634,12 +2256,6 @@ class Tasks(Component):
             ),
             (e_mice_fraction, 1 - e_mice_fraction),
         )
-        # self.load_rand.uniform, 0, self.env.config['resource_master.block.init_epsilon'] / self.env.config[
-        #     'task.demand.epsilon.mean_tasks_per_block'] * 2
-        # )
-
-        # num_blocks_mu = self.env.config['task.demand.num_blocks.mu']
-        # num_blocks_sigma = self.env.config['task.demand.num_blocks.sigma']
         block_mice_fraction = (
                 self.env.config['task.demand.num_blocks.mice_percentage'] / 100
         )
@@ -2651,8 +2267,6 @@ class Tasks(Component):
             ),
             (block_mice_fraction, 1 - block_mice_fraction),
         )
-        # self.load_rand.normalvariate, num_blocks_mu, num_blocks_sigma
-        # )
 
     def generate_tasks_loop(self):
 
@@ -2709,35 +2323,10 @@ class Tasks(Component):
                     max(1, round(self.num_blocks_dist())), num_stored_blocks
                 )
                 epsilon = self.epsilon_dist()
-                # delta = 1.0e-9
 
-                if self.resource_master.is_rdp and self.env.config['resource_master.dp_policy.is_rdp']:
-
-                    if (
-                            self.env.config['resource_master.dp_policy.is_rdp.mechanism']
-                            == RdpMechanism.GAUSSIAN
-                    ):
-                        sigma = gaussian_dp2sigma(epsilon, 1, DELTA)
-                        rdp_demand = compute_rdp_epsilons_gaussian(sigma, ALPHAS)
-                    elif (
-                            self.env.config['resource_master.dp_policy.is_rdp.mechanism']
-                            == RdpMechanism.LAPLACIAN
-                    ):
-                        rdp_demand = compute_rdp_epsilons_laplace(
-                            1 / epsilon, orders=ALPHAS
-                        )  # lambda = 1/epsilon
-
-                    elif (
-                            self.env.config['resource_master.dp_policy.is_rdp.mechanism']
-                            == RdpMechanism.GAUSSIAN_AND_LAPLACIAN
-                    ):
-                        if random.randint(0, 1) == 1:
-                            rdp_demand = compute_rdp_epsilons_laplace(
-                                1 / epsilon, orders=ALPHAS
-                            )  # lambda = 1/epsilon
-                        else:
-                            sigma = gaussian_dp2sigma(epsilon, 1, DELTA)
-                            rdp_demand = compute_rdp_epsilons_gaussian(sigma, ALPHAS)
+                if self.resource_master.is_rdp:
+                    sigma = gaussian_dp2sigma(epsilon, 1, DELTA)
+                    rdp_demand = compute_rdp_epsilons_gaussian(sigma, ALPHAS)
                 else:
                     rdp_demand = None
                 init_one_task(
@@ -2760,15 +2349,20 @@ class Tasks(Component):
                 for t in sorted(tasks, key=lambda x: x['arrival_time']):
                     assert t['arrival_time'] - self.env.now >= 0
                     yield self.env.timeout(t['arrival_time'] - self.env.now)
+                    if self.resource_master.is_rdp:
+                        sigma = gaussian_dp2sigma(t['epsilon'], 1, DELTA)
+                        rdp_demand = compute_rdp_epsilons_gaussian(sigma, ALPHAS)
+                    else:
+                        rdp_demand = None
                     t_id = next(task_id)
-                    # fixme
-                    raise Exception("fixme, should pass rdp for init one task")
+
                     init_one_task(
                         task_id=t_id,
                         start_block_idx=t['start_block_index'],
                         end_block_idx=t['end_block_index'],
                         epsilon=t['epsilon'],
                         delta=DELTA,
+                        e_rdp=rdp_demand,
                         completion_time=t['completion_time'],
                         cpu_demand=t['cpu_demand'],
                         gpu_demand=t['gpu_demand'],
@@ -2923,8 +2517,6 @@ class Tasks(Component):
                 else:
                     assert task_class == (False, False)
                     self.tasks_granted_count_l_dp_l_blk.put(1)
-                # else:
-                #     raise Exception('gweg')
                 return 0
 
             except (
@@ -2971,7 +2563,6 @@ class Tasks(Component):
             "completion_time": completion_time,
             "resource_allocated_event": resource_allocated_event,
             "dp_committed_event": dp_committed_event,
-            # 'task_completion_event': task_completion_event,
             'task_init_event': task_init_event,
             "user_id": None,
             "model_id": None,
@@ -3115,8 +2706,6 @@ class Tasks(Component):
         result['succeed_tasks_total'] = self.db.execute(
             'SELECT COUNT() FROM tasks  WHERE  dp_commit_timestamp >=0'
         ).fetchone()[0]
-        # avg_num_blocks = (self.env.config['task.demand.num_blocks.mice'] + self.env.config['task.demand.num_blocks.elephant'])/2
-        # avg_epsilon = (self.env.config['task.demand.epsilon.mice'] + self.env.config['task.demand.epsilon.elephant']) / 2
         result['succeed_tasks_s_dp_s_blk'] = self.db.execute(
             'SELECT COUNT() FROM tasks  WHERE  dp_commit_timestamp >=0 and epsilon < ? and num_blocks < ?',
             (self.resource_master._avg_epsilon, self.resource_master._avg_num_blocks),
@@ -3141,7 +2730,7 @@ class Tasks(Component):
                 self.env.time() / 3600
         )
 
-        # WARN not exact cal for median
+        # not exact cal for median
         sql_duration_percentile = """
         with nt_table as
          (
@@ -3172,12 +2761,6 @@ class Tasks(Component):
             'SELECT MAX(dp_commit_timestamp - start_timestamp) as dur FROM tasks WHERE  dp_commit_timestamp >=0'
         ).fetchone()[0]
 
-        # alloc_dur = self.db.execute(
-        #     # "select (abs(dp_commit_timestamp) - start_timestamp) AS dp_allocation_duration  from tasks").fetchall()
-        #     "select dp_commit_timestamp, start_timestamp from tasks"
-        # ).fetchall()
-        #
-        # result['dp_allocation_duration'] = alloc_dur  # [i[0] for i in alloc_dur]
 
         result['dp_allocation_duration_Median'] = (
             self.db.execute(

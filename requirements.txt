@@ -1,18 +1,9 @@
-dataclasses
-git+git://github.com/taoluo/simpy.git@osdi21_artifact#egg=simpy
-git+git://github.com/taoluo/desmod.git@osdi21_artifact#egg=desmod
+-e git+git://github.com/taoluo/simpy.git@osdi21_artifact#egg=simpy
+-e git+git://github.com/taoluo/desmod.git@osdi21_artifact#egg=desmod
 pyDigitalWaveTools
 notebook
 seaborn
-# for gtkwave save image.
-path
-EasyProcess
-pyvirtualdisplay
-pyscreenshot
-pillow
-docutils
-Sphinx
-
+pytest
 
 
 

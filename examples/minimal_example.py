@@ -9,7 +9,7 @@
 
 import sys
 import os
-from dpsched.utils.configs import *
+from dpsched.utils.configs import DpPolicyType
 from dpsched.DP_simulator import Top
 from desmod.simulation import simulate
 from datetime import datetime
@@ -24,7 +24,7 @@ T_rdp = rdp_arrival_itvl * N_rdp
 
 config = {
     'workload_test.enabled': False,  # if enabled, generate workload from trace file.
-    'workload_test.workload_trace_file': '/home/tao2/desmod/docs/examples/DP_allocation/workloads.yaml',
+    'workload_test.workload_trace_file': '/home/tao2/projects/PrivacySchedSim/workloads.yaml',
     # config of task workloads/demand
     'task.timeout.enabled': True,  # whether a waiting task should give up after timeout period
     'task.timeout.interval': 51,  # timeout period in sim.timescale
@@ -57,24 +57,14 @@ config = {
     'resource_master.cpu_capacity': sys.maxsize,  # number of cores the system has for allocation.
     'resource_master.memory_capacity': 624,
     # memory capacity the system has for allocation. in GB, assume granularity is 1GB
-    # https://cloud.google.com/compute/docs/gpus
-    # V100 VM instance
     'resource_master.gpu_capacity': 8,  # number of GPU cards the system has for allocation.
 
     # config of scheduling policy
     'resource_master.dp_policy': DpPolicyType.DP_POLICY_DPF_N,  # the policy name of scheduler
     'resource_master.dp_policy.denominator': N_dp,  # parameter N for number of arrived tasks based scheduling policy
     'resource_master.block.lifetime': T_rdp,  # parameter T for lifetime based scheduling policy
-    'resource_master.dp_policy.dpf_family.dominant_resource_share': DominantDpShareType.DPS_DP_L_Inf,
-    # How the dominant privacy share is defined for epsilon-delta DP composition, it decides the order of DP allocation.
     'resource_master.dp_policy.is_rdp': False,
     # whether the scheduler use Renyi DP composition or epsilon-delta DP composition
-    'resource_master.dp_policy.is_rdp.mechanism': RdpMechanism.GAUSSIAN,
-    # Tasks' type of mechanism to ensure DP guarantee, when scheduler uses Renyi DP composition. fixme
-    'resource_master.dp_policy.is_rdp.rdp_bound_mode': RdpBoundMode.PARTIAL_BOUNDED_RDP,
-    # how RDP budget is ensured when the scheduler does best effort allocation. fixme
-    'resource_master.dp_policy.is_rdp.dominant_resource_share': DominantRdpShareType.DPS_RDP_alpha_positive_budget,
-    # How the dominant privacy share is defined for Renyi DP composition - the determined the priority of DP allocation.
     'resource_master.dp_policy.dpf_family.grant_top_small': False,
     # If the scheduler use DPF-like policy, whether only grant first-k (leading smallest) tasks or do best effort grant until the last task.
     'resource_master.dp_policy.is_admission_control_enabled': False,
