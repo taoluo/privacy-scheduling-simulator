@@ -1102,8 +1102,11 @@ class ResourceMaster(Component):
                         get_amount = this_block['dp_container'].level
                     else:
                         get_amount = quota_increment
+
                     this_block['dp_container'].get(get_amount)
-                    this_block['dp_quota'].put(get_amount)
+                    block_quota = this_block['dp_quota']
+                    assert -self.env.config['sim.numerical_delta'] < block_quota.capacity - block_quota.level - get_amount
+                    block_quota.put(min(get_amount,block_quota.capacity - block_quota.level))
                     new_quota_unlocked = True
 
                 elif self.is_dp_policy_dpft:
