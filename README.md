@@ -14,7 +14,7 @@ wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/
 bash ~/miniconda.sh -b -p $HOME/miniconda
 eval "$($HOME/miniconda/bin/conda shell.bash hook)"
 conda init
-conda create -n ae  -c conda-forge pypy3.6 pip python -y
+conda create -n ae  -c conda-forge pypy3.6 pip python=3.6 seaborn notebook -y
 conda activate ae
 ```
 
