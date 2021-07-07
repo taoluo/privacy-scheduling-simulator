@@ -1,6 +1,6 @@
 ## Introduce Privacy Budget Scheduling Simulator
 
-This simulator studies various scheduling algorithms given differential privacy budget constrains. It includes round-robin, first-come-first-serve, DPF algorithms. For more background about this problem, please refer to our PrivateKube paper.
+This simulator studies various scheduling algorithms given differential privacy budget constraint. It includes round-robin, first-come-first-serve, DPF algorithms. For more background about this problem, please refer to our PrivateKube paper.
 
 In addition to differential privacy, the simulator also considers other computational resources, such as CPU and memory. 
 
